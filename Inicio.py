@@ -1,19 +1,3 @@
-"""
-streamlit_app_fixed_time.py
-
-Versión completa y corregida de tu app que soluciona el error "'Time'"
-Alcance:
-- Detecta delimitador (coma o punto y coma).
-- Normaliza nombres de columnas (quita espacios y pasa a minúsculas).
-- Busca la columna de tiempo de forma robusta (time, Time, _time, timestamp, date, fecha).
-- Parsea fechas en formato DD/MM/YYYY HH:MM (dayfirst=True) y UTF-8/latin1.
-- Renombra/normaliza temperature/humidity y preserva la UI (mapa, pestañas, gráficos, estadísticas, filtros).
-Instrucciones:
-- Reemplaza tu archivo actual por este contenido y ejecuta:
-    streamlit run streamlit_app_fixed_time.py
-- Sube el CSV "joinbyfield" (ej. el que pegaste) y la app debería procesarlo sin KeyError 'Time'.
-"""
-
 import io
 import csv
 from datetime import datetime
@@ -22,36 +6,36 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 
-# Página
+
 st.set_page_config(page_title="Análisis de Sensores - Fix Time", page_icon="📊", layout="wide")
 
 st.title("Análisis de Sensores — CSV (fix 'Time')")
 st.markdown("Sube tu CSV exportado (por ejemplo `time;temperature;humidity`) y la app procesará la columna de tiempo correctamente.")
 
-# Mapa estático (tu contenido original)
+
 eafit_location = pd.DataFrame({'lat': [6.2006], 'lon': [-75.5783], 'location': ['Universidad EAFIT']})
 st.subheader("📍 Ubicación de los Sensores - Universidad EAFIT")
 st.map(eafit_location, zoom=15)
 
-# Helper: detectar delimitador
+
 def detect_delimiter(sample: str) -> str:
     try:
         sniffer = csv.Sniffer()
         dialect = sniffer.sniff(sample[:4096])
         return dialect.delimiter
     except Exception:
-        # heurística simple
+        
         commas = sample.count(',')
         semis = sample.count(';')
         return ';' if semis > commas else ','
 
-# Subir archivo
+
 uploaded_file = st.file_uploader('Seleccione archivo CSV', type=['csv', 'txt'], accept_multiple_files=False)
 if uploaded_file is None:
     st.info('Sube el CSV (ej. time;temperature;humidity).')
     st.stop()
 
-# Leer bytes y decodificar con fallback
+
 raw = uploaded_file.read()
 text = None
 for enc in ("utf-8", "utf-8-sig", "latin1", "cp1252"):
@@ -62,7 +46,7 @@ for enc in ("utf-8", "utf-8-sig", "latin1", "cp1252"):
     except Exception:
         continue
 if text is None:
-    # último recurso
+    
     try:
         text = raw.decode('latin1', errors='replace')
         detected_enc = 'latin1-replace'
@@ -77,49 +61,49 @@ if not lines:
     st.error("Archivo vacío.")
     st.stop()
 
-# Detectar delimitador y leer con pandas
+
 delimiter = detect_delimiter("\n".join(lines[:20]))
 st.info(f"Delimitador detectado: '{delimiter}'")
 
-# Buscar línea de encabezado (primera que contenga nombres reconocibles)
+
 header_candidates = ('time', '_time', 'timestamp', 'date', 'fecha', 'temperature', 'temp', 'humidity', 'humedad')
 header_idx = None
 for i, line in enumerate(lines[:50]):
     parts = [p.strip().strip('"') for p in line.split(delimiter)]
-    # hay al menos una etiqueta reconocible y al menos un token alfabético
+    
     if any(any(h in p.lower() for h in header_candidates) for p in parts) and any(any(c.isalpha() for c in p) for p in parts):
         header_idx = i
         break
 if header_idx is None:
-    # usar primera línea por defecto
+    
     header_idx = 0
 
-# Leer CSV usando header detectado
+
 try:
     df = pd.read_csv(io.StringIO("\n".join(lines)), header=header_idx, sep=delimiter)
 except Exception as e:
     st.error(f"Error leyendo CSV con pandas: {e}")
     st.stop()
 
-# Eliminar columnas de metadatos típicas si existen
+
 drop_meta = [c for c in df.columns if isinstance(c, str) and (c.strip().startswith('#') or c.lower().startswith('result') or c.lower().startswith('table') or 'unnamed' in c.lower())]
 if drop_meta:
     df = df.drop(columns=drop_meta, errors='ignore')
     st.info(f"Se eliminaron columnas metadata: {drop_meta}")
 
-# Normalizar nombres: strip y lowercase keys for detection
+
 df.columns = [str(c).strip() for c in df.columns]
 col_map_lower = {c: c.lower() for c in df.columns}
 df.rename(columns=col_map_lower, inplace=True)
 
 st.info(f"Columnas detectadas: {list(df.columns)}")
 
-# Encontrar columna de tiempo
+
 time_candidates = [c for c in df.columns if c in ('time', '_time', 'timestamp', 'date', 'fecha')]
 chosen_time_col = time_candidates[0] if time_candidates else None
 
 if not chosen_time_col:
-    # heurística por contenido: la que más parsea como fecha con dayfirst=True
+    
     for c in df.columns:
         sample_vals = df[c].dropna().astype(str).head(10).tolist()
         parsed = 0
@@ -140,7 +124,7 @@ if not chosen_time_col:
 
 st.success(f"Usando columna de tiempo: '{chosen_time_col}'")
 
-# Parsear fechas (dayfirst=True para DD/MM/YYYY)
+
 df[chosen_time_col] = pd.to_datetime(df[chosen_time_col].astype(str), errors='coerce', dayfirst=True)
 na_time = int(df[chosen_time_col].isna().sum())
 if na_time > 0:
@@ -148,15 +132,15 @@ if na_time > 0:
     st.write("Algunos ejemplos no parseables:")
     st.write(df[df[chosen_time_col].isna()].head(5))
 
-# Filtrar filas con tiempo válido
+
 df = df[df[chosen_time_col].notna()].copy()
 
-# Renombrar y set index a 'Time'
+
 df = df.rename(columns={chosen_time_col: 'Time'})
 df['Time'] = pd.to_datetime(df['Time'], dayfirst=True)
 df = df.set_index('Time')
 
-# Detectar columnas temperatura y humedad
+
 temp_col = None
 hum_col = None
 for c in df.columns:
@@ -166,7 +150,7 @@ for c in df.columns:
     if hum_col is None and ('hum' in lc or 'humidity' in lc or 'humedad' in lc):
         hum_col = c
 
-# Si el CSV ya tiene 'temperature' y 'humidity' en minúsculas, lo detectará
+
 rename_map = {}
 if temp_col:
     rename_map[temp_col] = 'temperatura'
@@ -176,17 +160,17 @@ if rename_map:
     df = df.rename(columns=rename_map)
     st.success(f"Columnas renombradas automáticamente: {rename_map}")
 
-# Si no se detectaron, informa
+
 if 'temperatura' not in df.columns and 'humedad' not in df.columns:
     st.warning("No se detectaron columnas llamadas 'temperatura' ni 'humedad'. Columnas actuales:")
     st.write(list(df.columns))
 
-# Convertir a numérico (soporta coma decimal)
+
 for col in ['temperatura', 'humedad']:
     if col in df.columns:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
 
-# Eliminar filas sin datos numéricos
+
 if 'temperatura' in df.columns and 'humedad' in df.columns:
     df = df[~(df['temperatura'].isna() & df['humedad'].isna())]
 else:
@@ -199,7 +183,7 @@ if df.empty:
     st.error("Después del filtrado no quedan filas válidas.")
     st.stop()
 
-# Interfaz: pestañas como en tu app original
+
 tab1, tab2, tab3, tab4 = st.tabs(["📈 Visualización", "📊 Estadísticas", "🔍 Filtros", "🗺️ Información del Sitio"])
 
 with tab1:
@@ -281,7 +265,7 @@ with tab4:
         st.write("- Tipo: ESP32")
         st.write("- Variables medidas: Temperatura (°C), Humedad (%)")
 
-# Vista previa y descarga final
+
 st.markdown("---")
 st.subheader("Datos procesados - vista previa")
 st.dataframe(df.reset_index().head(500), height=300)
